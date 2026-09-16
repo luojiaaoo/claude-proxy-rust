@@ -27,13 +27,14 @@ use crate::{
     OpenAiType,
     error::{ProxyError, anthropic_error, upstream_error},
     sse::{convert_chat_stream, convert_responses_stream},
-    transform::{anthropic_to_chat, anthropic_to_responses},
+    transform::{anthropic_to_chat, anthropic_to_responses, fix_system_message_order},
 };
 
 pub struct AppState {
     pub client: reqwest::Client,
     pub openai_type: OpenAiType,
     pub upstream_url: Url,
+    pub fix_system_message: bool,
 }
 
 #[derive(Clone)]
@@ -172,12 +173,15 @@ async fn handle_messages(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, ProxyError> {
-    let anthropic: Value = serde_json::from_slice(&body)
+    let mut anthropic: Value = serde_json::from_slice(&body)
         .map_err(|error| ProxyError::InvalidRequest(format!("JSON 无效: {error}")))?;
     if anthropic.get("stream").and_then(Value::as_bool) != Some(true) {
         return Err(ProxyError::InvalidRequest(
             "本代理只支持流式请求，请设置 stream: true".into(),
         ));
+    }
+    if state.fix_system_message {
+        fix_system_message_order(&mut anthropic);
     }
     let upstream_body = match state.openai_type {
         OpenAiType::Responses => anthropic_to_responses(&anthropic)?,
@@ -211,6 +215,7 @@ async fn handle_messages(
         tools = tool_count,
         request_bytes = body.len(),
         auth_source,
+        fix_system_message = state.fix_system_message,
         upstream_host = state.upstream_url.host_str().unwrap_or("unknown"),
         upstream_path = state.upstream_url.path(),
         "forwarding stream request"

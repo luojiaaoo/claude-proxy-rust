@@ -2,6 +2,39 @@ use serde_json::{Map, Value, json};
 
 use crate::error::ProxyError;
 
+/// Move every `role: "system"` entry out of `messages` and merge its text into
+/// the top-level Anthropic `system` field. This guarantees that Chat backends
+/// receive exactly one leading system message and Responses backends receive
+/// the same text through `instructions`.
+pub fn fix_system_message_order(body: &mut Value) {
+    let mut system_parts = body
+        .get("system")
+        .map(text_from_content)
+        .filter(|text| !text.is_empty())
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) {
+        messages.retain(|message| {
+            if message.get("role").and_then(Value::as_str) != Some("system") {
+                return true;
+            }
+            let text = message
+                .get("content")
+                .map(text_from_content)
+                .unwrap_or_default();
+            if !text.is_empty() {
+                system_parts.push(text);
+            }
+            false
+        });
+    }
+
+    if !system_parts.is_empty() {
+        body["system"] = json!(system_parts.join("\n\n"));
+    }
+}
+
 pub fn anthropic_to_chat(body: &Value) -> Result<Value, ProxyError> {
     validate_anthropic_request(body)?;
     let mut out = Map::new();
@@ -616,5 +649,28 @@ mod tests {
         assert_eq!(result["input"][1]["type"], "function_call_output");
         assert_eq!(result["max_output_tokens"], 16);
         assert_eq!(result["stream"], true);
+    }
+
+    #[test]
+    fn moves_all_system_messages_to_the_beginning() {
+        let mut source = json!({
+            "model":"gpt-4o", "stream":true,
+            "system":"top-level",
+            "messages":[
+                {"role":"user","content":"first"},
+                {"role":"system","content":"middle"},
+                {"role":"assistant","content":"answer"},
+                {"role":"system","content":[{"type":"text","text":"last"}]}
+            ]
+        });
+
+        fix_system_message_order(&mut source);
+        assert_eq!(source["system"], "top-level\n\nmiddle\n\nlast");
+        assert_eq!(source["messages"].as_array().unwrap().len(), 2);
+
+        let chat = anthropic_to_chat(&source).unwrap();
+        assert_eq!(chat["messages"][0]["role"], "system");
+        assert_eq!(chat["messages"][1]["role"], "user");
+        assert_eq!(chat["messages"][2]["role"], "assistant");
     }
 }

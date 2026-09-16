@@ -25,7 +25,7 @@ use tracing_subscriber::{
 };
 use url::Url;
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OpenAiType {
     Responses,
     Chat,
@@ -35,23 +35,44 @@ enum OpenAiType {
 #[command(
     name = "claude-proxy-rust",
     version,
+    disable_version_flag = true,
     about = "将 Anthropic Messages API 转发到 OpenAI Responses/Chat API",
     arg_required_else_help = true
 )]
 struct Cli {
     /// 本地 Anthropic 服务监听端口
+    #[arg(short = 'p', long)]
     port: u16,
 
     /// 上游 OpenAI API 类型：Responses 或 Chat（大小写不敏感）
-    #[arg(value_enum, ignore_case = true)]
+    #[arg(short = 't', long, value_enum, ignore_case = true)]
     openai_type: OpenAiType,
 
     /// OpenAI 兼容服务的基础 URL，例如 https://api.openai.com/v1
-    #[arg(value_parser = parse_base_url)]
+    #[arg(short = 'u', long, value_parser = parse_base_url)]
     base_url: Url,
 
     /// 可选日志文件路径；指定后日志会同时输出到控制台和该文件
+    #[arg(short = 'l', long)]
     log_path: Option<PathBuf>,
+
+    /// 将 messages 中的 system 消息归并到开头，默认开启
+    #[arg(
+        short = 's',
+        long,
+        default_value_t = true,
+        action = clap::ArgAction::Set
+    )]
+    fix_system_message: bool,
+
+    /// 显示版本信息
+    #[arg(
+        short = 'v',
+        long,
+        action = clap::ArgAction::Version,
+        required = false
+    )]
+    version: Option<bool>,
 }
 
 fn parse_base_url(raw: &str) -> Result<Url, String> {
@@ -87,6 +108,7 @@ async fn main() {
             .expect("failed to build HTTP client"),
         openai_type: cli.openai_type,
         upstream_url,
+        fix_system_message: cli.fix_system_message,
     });
 
     let app = Router::new()
@@ -115,6 +137,7 @@ async fn main() {
         listen = %format_args!("http://127.0.0.1:{}", cli.port),
         upstream = %logged_upstream,
         openai_type = ?state.openai_type,
+        fix_system_message = state.fix_system_message,
         log_path = ?cli.log_path,
         "Anthropic proxy started"
     );
@@ -204,4 +227,44 @@ fn init_logging(path: Option<&Path>) -> Result<(), String> {
             .try_init()
     };
     result.map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_options_enable_system_fix_by_default() {
+        let cli = Cli::try_parse_from([
+            "claude-proxy-rust",
+            "-p",
+            "8080",
+            "-t",
+            "Chat",
+            "-u",
+            "https://api.openai.com/v1",
+        ])
+        .unwrap();
+        assert_eq!(cli.port, 8080);
+        assert_eq!(cli.openai_type, OpenAiType::Chat);
+        assert!(cli.fix_system_message);
+    }
+
+    #[test]
+    fn system_fix_can_be_disabled_explicitly() {
+        let cli = Cli::try_parse_from([
+            "claude-proxy-rust",
+            "--port",
+            "8080",
+            "--openai-type",
+            "Responses",
+            "--base-url",
+            "https://api.openai.com/v1",
+            "--fix-system-message",
+            "false",
+        ])
+        .unwrap();
+        assert_eq!(cli.openai_type, OpenAiType::Responses);
+        assert!(!cli.fix_system_message);
+    }
 }

@@ -4,23 +4,27 @@
 
 ## 启动
 
-程序使用三个必填位置参数和一个可选日志路径：
+程序使用以下命令行参数：
 
 ```text
-claude-proxy-rust <PORT> <OPENAI_TYPE> <BASE_URL> [LOG_PATH]
+claude-proxy-rust --port <PORT> --openai-type <OPENAI_TYPE> --base-url <BASE_URL> [OPTIONS]
 ```
 
-- `PORT`：本机代理端口。
-- `OPENAI_TYPE`：`Responses` 或 `Chat`，大小写不敏感。
-- `BASE_URL`：OpenAI 兼容服务地址。可以传 API 根地址、`.../v1` 地址或对应的完整接口地址。
-- `LOG_PATH`：可选日志文件路径。指定后，控制台日志会同步追加到该文件；父目录不存在时会自动创建。
+- `-p, --port <PORT>`：本机代理端口。
+- `-t, --openai-type <OPENAI_TYPE>`：`Responses` 或 `Chat`，大小写不敏感。
+- `-u, --base-url <BASE_URL>`：OpenAI 兼容服务地址。可以传 API 根地址、`.../v1` 地址或对应的完整接口地址。
+- `-l, --log-path <LOG_PATH>`：可选日志文件路径。控制台日志会同步追加到该文件；父目录不存在时会自动创建。
+- `-s, --fix-system-message <true|false>`：归并所有 system 内容并放到最前面，避免上游返回 `System message must be at the beginning`。默认 `true`。
+- `-v, --version`：显示版本。
+- `-h, --help`：显示帮助。
 
 例如：
 
 ```powershell
-cargo run --release -- 8080 Responses https://api.openai.com/v1
-cargo run --release -- 8080 Chat https://api.openai.com/v1
-cargo run --release -- 8080 Chat https://api.openai.com/v1 .\logs\proxy.log
+cargo run --release -- -p 8080 -t Responses -u https://api.openai.com/v1
+cargo run --release -- -p 8080 -t Chat -u https://api.openai.com/v1
+cargo run --release -- -p 8080 -t Chat -u https://api.openai.com/v1 -l .\logs\proxy.log
+cargo run --release -- -p 8080 -t Chat -u https://api.openai.com/v1 -s false
 ```
 
 启动后只监听回环地址：

@@ -1,0 +1,22 @@
+[package]
+name = "claude-proxy-rust"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Expose an Anthropic Messages endpoint backed by OpenAI Responses or Chat Completions"
+
+[dependencies]
+async-stream = "0.3"
+axum = "0.8"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+futures-util = "0.3"
+http-body = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
